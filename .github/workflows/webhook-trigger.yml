@@ -4,28 +4,62 @@ on:
   push:
     branches:
       - main
+    paths:
+      # ACTION TRIGGER LEVEL: The workflow will ONLY run if at least one .md file is changed.
+      # This saves CI/CD minutes and prevents unnecessary webhook calls.
+      - '**.md'
 
 jobs:
   notify-webhook:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
+      - name: Construct JSON Payload
+        # PAYLOAD FILTERING LEVEL: If a commit contains both 'docs.md' and 'app.ts',
+        # the jq 'map(select(test("\\.md$")))' command strips out 'app.ts' before sending it to NestJS.
+        run: |
+          jq '{
+            ref: .ref,
+            repository: { full_name: .repository.full_name },
+            commits: [
+              {
+                added: (if .commits then [.commits[].added] | flatten | unique | map(select(test("\\.md$"))) else [] end),
+                modified: (if .commits then [.commits[].modified] | flatten | unique | map(select(test("\\.md$"))) else [] end),
+                removed: (if .commits then [.commits[].removed] | flatten | unique | map(select(test("\\.md$"))) else [] end)
+              }
+            ]
+          }' "$GITHUB_EVENT_PATH" > payload.json
+          
+          echo "Payload successfully constructed:"
+          cat payload.json
 
-      - name: Get changed files
-        id: changed-files
-        uses: tj-actions/changed-files@v42
-        with:
-          json: true
+      - name: Generate HMAC Signature
+        id: sign
+        env:
+          SECRET: ${{ secrets.WEBHOOK_SECRET }}
+        run: |
+          SIGNATURE=$(node -e "
+            const fs = require('fs');
+            const crypto = require('crypto');
+            const payload = fs.readFileSync('payload.json', 'utf8');
+            const hmac = crypto.createHmac('sha256', process.env.SECRET);
+            console.log('sha256=' + hmac.update(payload).digest('hex'));
+          ")
+          echo "signature=$SIGNATURE" >> $GITHUB_OUTPUT
 
-      - name: Send Webhook to NestJS
-        uses: fjogeleit/http-request-action@v1
-        with:
-          url: ${{ secrets.NESTJS_WEBHOOK_URL }}
-          method: 'POST'
-          # Ensure customHeaders is a valid JSON string
-          customHeaders: '{"Content-Type": "application/json", "x-hub-signature-256": "${{ secrets.WEBHOOK_SECRET }}", "x-github-event": "push"}'
-          # Using a single-line data entry to prevent YAML block-formatting issues
-          data: '{"ref": "${{ github.ref }}", "repository": {"full_name": "${{ github.repository }}"}, "commits": [{"added": ${{ steps.changed-files.outputs.added_files }}, "modified": ${{ steps.changed-files.outputs.modified_files }}, "removed": ${{ steps.changed-files.outputs.deleted_files }} }]}'
+      - name: Send Webhook
+        env:
+          WEBHOOK_URL: ${{ secrets.NESTJS_WEBHOOK_URL }}
+        run: |
+          HTTP_STATUS=$(curl -s -o response.txt -w "%{http_code}" -X POST "$WEBHOOK_URL" \
+            -H "Content-Type: application/json" \
+            -H "x-github-event: push" \
+            -H "x-hub-signature-256: ${{ steps.sign.outputs.signature }}" \
+            -d @payload.json)
+            
+          echo "HTTP Response Status: $HTTP_STATUS"
+          cat response.txt
+          
+          if [ "$HTTP_STATUS" -ne 200 ] && [ "$HTTP_STATUS" -ne 201 ]; then
+            echo -e "\nWebhook failed."
+            exit 1
+          fi
