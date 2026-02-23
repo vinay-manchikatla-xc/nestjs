@@ -25,7 +25,7 @@ jobs:
         with:
           url: ${{ secrets.NESTJS_WEBHOOK_URL }} # Set this secret in your repository settings
           method: 'POST'
-          customHeaders: '{"Content-Type": "application/json", "x-hub-signature-256": "${{ secrets.GITHUB_WEBHOOK_SECRET }}", "x-github-event": "push"}'
+          customHeaders: '{"Content-Type": "application/json", "x-hub-signature-256": "${{ secrets.WEBHOOK_SECRET }}", "x-github-event": "push"}'
           # We pass the standard GitHub payload + the specific changed files we found
           data: >
             {
