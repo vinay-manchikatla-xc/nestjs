@@ -1,11 +1,11 @@
 ## E-Commerce Website Details
 
-- **Website Name:** MegaMart
-- **Description:** MegaMart is a global online marketplace offering a vast selection of products including electronics, fashion, home essentials, books, and more.
+- **Website Name:** DMART
+- **Description:** DMART is a global online marketplace offering a vast selection of products including electronics, fashion, home essentials, books, and more.
 - **Customer Support:** 24/7 multilingual support via live chat, email, and phone for all customers.
-- **Order Tracking:** Real-time order tracking and delivery notifications through the MegaMart app and website.
+- **Order Tracking:** Real-time order tracking and delivery notifications through the DMART app and website.
 - **Return Policy:** 15-day easy returns and instant refunds for eligible products.
-- **Payment Methods:** Credit/Debit cards, PayPal, UPI, net banking, and MegaMart wallet.
-- **Promotions:** Flash sales, festival offers, and exclusive MegaMart membership discounts.
+- **Payment Methods:** Credit/Debit cards, PayPal, UPI, net banking, and DMART wallet.
+- **Promotions:** Flash sales, festival offers, and exclusive DMART membership discounts.
 - **User Reviews:** Verified customers can post reviews, ratings, and product photos.
 - **Security:** Advanced encryption, secure payment gateways, and buyer protection guarantee.
