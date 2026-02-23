@@ -1,0 +1,43 @@
+name: Trigger Vector DB Update
+
+on:
+  push:
+    branches:
+      - main # Change this if your default branch is different
+
+jobs:
+  notify-webhook:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # Required to get the list of changed files between commits
+
+      - name: Get changed files
+        id: changed-files
+        uses: tj-actions/changed-files@v42
+        with:
+          json: true # Formats the output as a JSON array for your NestJS service
+
+      - name: Send Webhook to NestJS
+        uses: fjogeleit/http-request-action@v1
+        with:
+          url: ${{ secrets.NESTJS_WEBHOOK_URL }} # Set this secret in your repository settings
+          method: 'POST'
+          customHeaders: '{"Content-Type": "application/json", "x-hub-signature-256": "${{ secrets.GITHUB_WEBHOOK_SECRET }}", "x-github-event": "push"}'
+          # We pass the standard GitHub payload + the specific changed files we found
+          data: >
+            {
+              "ref": "${{ github.ref }}",
+              "repository": {
+                "full_name": "${{ github.repository }}"
+              },
+              "commits": [
+                {
+                  "added": ${{ steps.changed-files.outputs.added_files }},
+                  "modified": ${{ steps.changed-files.outputs.modified_files }},
+                  "removed": ${{ steps.changed-files.outputs.deleted_files }}
+                }
+              ]
+            }
