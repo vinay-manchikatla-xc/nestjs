@@ -5,34 +5,30 @@ on:
     branches:
       - main
     paths:
-      # ACTION TRIGGER LEVEL: The workflow will ONLY run if at least one .md file is changed.
-      # This saves CI/CD minutes and prevents unnecessary webhook calls.
       - '**.md'
 
 jobs:
   notify-webhook:
     runs-on: ubuntu-latest
     steps:
-      - name: Debug Raw Event Payload
+      - name: Construct JSON Payload via GitHub API
+        env:
+          # Automatically provided by GitHub Actions, no setup needed
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          echo "Raw Commits Array:"
-          cat "$GITHUB_EVENT_PATH" | jq '.commits'
-          echo "Head Commit Object:"
-          cat "$GITHUB_EVENT_PATH" | jq '.head_commit'
-      - name: Construct JSON Payload
-        run: |
-          jq '{
-            ref: .ref,
-            repository: { full_name: .repository.full_name },
+          # Fetch exact commit details using GitHub CLI and format using jq
+          gh api repos/${{ github.repository }}/commits/${{ github.sha }} | jq '{
+            ref: "${{ github.ref }}",
+            repository: { full_name: "${{ github.repository }}" },
             commits: [
               {
-                added: ([(.commits[]?.added[]?)] | unique | map(select(test("\\.md$")))),
-                modified: ([(.commits[]?.modified[]?)] | unique | map(select(test("\\.md$")))),
-                removed: ([(.commits[]?.removed[]?)] | unique | map(select(test("\\.md$"))))
+                added: (if .files then [.files[] | select(.status == "added" and (.filename | test("\\.md$"))) | .filename] else [] end),
+                modified: (if .files then [.files[] | select(.status == "modified" and (.filename | test("\\.md$"))) | .filename] else [] end),
+                removed: (if .files then [.files[] | select(.status == "removed" and (.filename | test("\\.md$"))) | .filename] else [] end)
               }
             ]
-          }' "$GITHUB_EVENT_PATH" > payload.json
-
+          }' > payload.json
+          
           echo "Payload successfully constructed:"
           cat payload.json
 
