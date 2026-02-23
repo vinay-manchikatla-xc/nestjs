@@ -13,18 +13,44 @@ jobs:
     steps:
       - name: Construct JSON Payload via GitHub API
         env:
-          # Automatically provided by GitHub Actions, no setup needed
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BASE_SHA: ${{ github.event.before }}
+          HEAD_SHA: ${{ github.event.after }}
         run: |
-          # Fetch exact commit details using GitHub CLI and format using jq
-          gh api repos/${{ github.repository }}/commits/${{ github.sha }} | jq '{
+          # 1. Handle Edge Case: Branch creation or force push where 'before' is a zero-hash
+          if [ "$BASE_SHA" = "0000000000000000000000000000000000000000" ] || [ -z "$BASE_SHA" ]; then
+            API_ENDPOINT="repos/${{ github.repository }}/commits/$HEAD_SHA"
+          else
+            API_ENDPOINT="repos/${{ github.repository }}/compare/$BASE_SHA...$HEAD_SHA"
+          fi
+          
+          echo "Querying GitHub API: $API_ENDPOINT"
+          
+          # 2. Fetch the file diff and process with jq
+          # - Splits 'renamed' status into 'removed' (old file) and 'added' (new file)
+          # - Ensures .md regex applies correctly to both new and old filenames
+          gh api "$API_ENDPOINT" --paginate | jq '{
             ref: "${{ github.ref }}",
             repository: { full_name: "${{ github.repository }}" },
             commits: [
               {
-                added: (if .files then [.files[] | select(.status == "added" and (.filename | test("\\.md$"))) | .filename] else [] end),
-                modified: (if .files then [.files[] | select(.status == "modified" and (.filename | test("\\.md$"))) | .filename] else [] end),
-                removed: (if .files then [.files[] | select(.status == "removed" and (.filename | test("\\.md$"))) | .filename] else [] end)
+                added: (
+                  if .files then
+                    [.files[] | select((.status == "added" or .status == "copied") and (.filename | test("\\.md$"))) | .filename] +
+                    [.files[] | select(.status == "renamed" and (.filename | test("\\.md$"))) | .filename]
+                  else [] end | unique
+                ),
+                modified: (
+                  if .files then
+                    [.files[] | select((.status == "modified" or .status == "changed") and (.filename | test("\\.md$"))) | .filename]
+                  else [] end | unique
+                ),
+                removed: (
+                  if .files then
+                    [.files[] | select(.status == "removed" and (.filename | test("\\.md$"))) | .filename] +
+                    [.files[] | select(.status == "renamed" and (.previous_filename | test("\\.md$"))) | .previous_filename]
+                  else [] end | unique
+                )
               }
             ]
           }' > payload.json
