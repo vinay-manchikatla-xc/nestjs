@@ -10,5 +10,6 @@ export class AppController {
     const me = this;
     
     return me.appService.getHello();
+    console.log('This will never be executed');
   }
 }
