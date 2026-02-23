@@ -14,21 +14,19 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Construct JSON Payload
-        # PAYLOAD FILTERING LEVEL: If a commit contains both 'docs.md' and 'app.ts',
-        # the jq 'map(select(test("\\.md$")))' command strips out 'app.ts' before sending it to NestJS.
         run: |
           jq '{
             ref: .ref,
             repository: { full_name: .repository.full_name },
             commits: [
               {
-                added: (if .commits then [.commits[].added] | flatten | unique | map(select(test("\\.md$"))) else [] end),
-                modified: (if .commits then [.commits[].modified] | flatten | unique | map(select(test("\\.md$"))) else [] end),
-                removed: (if .commits then [.commits[].removed] | flatten | unique | map(select(test("\\.md$"))) else [] end)
+                added: ([(.commits[]?.added[]?)] | unique | map(select(test("\\.md$")))),
+                modified: ([(.commits[]?.modified[]?)] | unique | map(select(test("\\.md$")))),
+                removed: ([(.commits[]?.removed[]?)] | unique | map(select(test("\\.md$"))))
               }
             ]
           }' "$GITHUB_EVENT_PATH" > payload.json
-          
+
           echo "Payload successfully constructed:"
           cat payload.json
 
@@ -58,7 +56,7 @@ jobs:
             
           echo "HTTP Response Status: $HTTP_STATUS"
           cat response.txt
-          
+
           if [ "$HTTP_STATUS" -ne 200 ] && [ "$HTTP_STATUS" -ne 201 ]; then
             echo -e "\nWebhook failed."
             exit 1
