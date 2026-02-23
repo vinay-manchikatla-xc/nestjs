@@ -13,6 +13,12 @@ jobs:
   notify-webhook:
     runs-on: ubuntu-latest
     steps:
+      - name: Debug Raw Event Payload
+        run: |
+          echo "Raw Commits Array:"
+          cat "$GITHUB_EVENT_PATH" | jq '.commits'
+          echo "Head Commit Object:"
+          cat "$GITHUB_EVENT_PATH" | jq '.head_commit'
       - name: Construct JSON Payload
         run: |
           jq '{
