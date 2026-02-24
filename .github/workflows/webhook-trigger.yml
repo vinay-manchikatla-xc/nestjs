@@ -1,0 +1,91 @@
+name: Trigger Vector DB Update
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - '**.md'
+
+jobs:
+  notify-webhook:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Construct JSON Payload via GitHub API
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BASE_SHA: ${{ github.event.before }}
+          HEAD_SHA: ${{ github.event.after }}
+        run: |
+          # 1. Handle Edge Case: Branch creation or force push where 'before' is a zero-hash
+          if [ "$BASE_SHA" = "0000000000000000000000000000000000000000" ] || [ -z "$BASE_SHA" ]; then
+            API_ENDPOINT="repos/${{ github.repository }}/commits/$HEAD_SHA"
+          else
+            API_ENDPOINT="repos/${{ github.repository }}/compare/$BASE_SHA...$HEAD_SHA"
+          fi
+          
+          echo "Querying GitHub API: $API_ENDPOINT"
+          
+          # 2. Fetch the file diff and process with jq
+          # - Splits 'renamed' status into 'removed' (old file) and 'added' (new file)
+          # - Ensures .md regex applies correctly to both new and old filenames
+          gh api "$API_ENDPOINT" --paginate | jq '{
+            ref: "${{ github.ref }}",
+            repository: { full_name: "${{ github.repository }}" },
+            commits: [
+              {
+                added: (
+                  if .files then
+                    [.files[] | select((.status == "added" or .status == "copied") and (.filename | test("\\.md$"))) | .filename] +
+                    [.files[] | select(.status == "renamed" and (.filename | test("\\.md$"))) | .filename]
+                  else [] end | unique
+                ),
+                modified: (
+                  if .files then
+                    [.files[] | select((.status == "modified" or .status == "changed") and (.filename | test("\\.md$"))) | .filename]
+                  else [] end | unique
+                ),
+                removed: (
+                  if .files then
+                    [.files[] | select(.status == "removed" and (.filename | test("\\.md$"))) | .filename] +
+                    [.files[] | select(.status == "renamed" and (.previous_filename | test("\\.md$"))) | .previous_filename]
+                  else [] end | unique
+                )
+              }
+            ]
+          }' > payload.json
+          
+          echo "Payload successfully constructed:"
+          cat payload.json
+
+      - name: Generate HMAC Signature
+        id: sign
+        env:
+          SECRET: ${{ secrets.WEBHOOK_SECRET }}
+        run: |
+          SIGNATURE=$(node -e "
+            const fs = require('fs');
+            const crypto = require('crypto');
+            const payload = fs.readFileSync('payload.json', 'utf8');
+            const hmac = crypto.createHmac('sha256', process.env.SECRET);
+            console.log('sha256=' + hmac.update(payload).digest('hex'));
+          ")
+          echo "signature=$SIGNATURE" >> $GITHUB_OUTPUT
+
+      - name: Send Webhook
+        env:
+          WEBHOOK_URL: ${{ secrets.NESTJS_WEBHOOK_URL }}
+        run: |
+          HTTP_STATUS=$(curl -s -o response.txt -w "%{http_code}" -X POST "$WEBHOOK_URL" \
+            -H "Content-Type: application/json" \
+            -H "x-github-event: push" \
+            -H "x-hub-signature-256: ${{ steps.sign.outputs.signature }}" \
+            -d @payload.json)
+            
+          echo "HTTP Response Status: $HTTP_STATUS"
+          cat response.txt
+
+          if [ "$HTTP_STATUS" -ne 200 ] && [ "$HTTP_STATUS" -ne 201 ]; then
+            echo -e "\nWebhook failed."
+            exit 1
+          fi
